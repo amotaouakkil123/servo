@@ -3447,6 +3447,7 @@ impl ScriptThread {
             incomplete.load_data.inherited_secure_context,
             incomplete.theme,
         );
+        // TODO: call this for workers too
         self.debugger_global
             .fire_add_debuggee(can_gc, window.upcast(), incomplete.pipeline_id);
 

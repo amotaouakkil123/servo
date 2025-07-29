@@ -56,6 +56,7 @@ pub struct SourceActor {
     pub content: Option<String>,
     pub content_type: Option<String>,
 
+    pub spidermonkey_id: u32,
     /// `introductionType` in SpiderMonkey `CompileOptionsWrapper`.
     pub introduction_type: String,
 }
@@ -96,6 +97,7 @@ impl SourceActor {
         url: ServoUrl,
         content: Option<String>,
         content_type: Option<String>,
+        spidermonkey_id: u32,
         introduction_type: String,
     ) -> SourceActor {
         SourceActor {
@@ -104,6 +106,7 @@ impl SourceActor {
             content,
             content_type,
             is_black_boxed: false,
+            spidermonkey_id,
             introduction_type,
         }
     }
@@ -114,6 +117,7 @@ impl SourceActor {
         url: ServoUrl,
         content: Option<String>,
         content_type: Option<String>,
+        spidermonkey_id: u32,
         introduction_type: String,
     ) -> &SourceActor {
         let source_actor_name = actors.new_name("source");
@@ -123,6 +127,7 @@ impl SourceActor {
             url,
             content,
             content_type,
+            spidermonkey_id,
             introduction_type,
         );
         actors.register(Box::new(source_actor));

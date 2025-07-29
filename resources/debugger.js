@@ -11,8 +11,13 @@ dbg.onNewGlobalObject = function(global) {
 
 dbg.onNewScript = function(script, /* undefined; seems to be `script.global` now */ global) {
     try {
-        // TODO: notify script system about new source
-        /* notifyNewSource */({
+        console.log("[debugger] onNewScript url=", script.url, "source id=", script.source.id, "introductionType=", script.source.introductionType, "displayURL=", script.source.displayURL);
+        try {
+            console.log("[debugger] source binary=", typeof script.source.binary);
+        } catch (error) {
+            // Do nothing; the source is not wasm
+        }
+        notifyNewSource({
             pipelineId: debuggeesToPipelineIds.get(script.global),
             workerId: debuggeesToWorkerIds.get(script.global),
             spidermonkeyId: script.source.id,

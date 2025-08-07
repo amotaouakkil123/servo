@@ -464,6 +464,7 @@ impl ShadowRootMethods<crate::DomTypeHolder> for ShadowRoot {
         // algorithm steps with this and true.
         self.upcast::<Node>()
             .fragment_serialization_algorithm(true, can_gc)
+            .unwrap() // The spec doesn't mark `innerHTML` as `Throws`.
     }
 
     /// <https://html.spec.whatwg.org/multipage/#dom-shadowroot-innerhtml>

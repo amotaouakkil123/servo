@@ -45,12 +45,14 @@ use crate::dom::bindings::structuredclone;
 use crate::dom::bindings::trace::{CustomTraceable, RootedTraceableBox};
 use crate::dom::bindings::utils::define_all_exposed_interfaces;
 use crate::dom::csp::{Violation, parse_csp_list_from_metadata};
+use crate::dom::debuggerglobalscope::ThreadInfo;
 use crate::dom::errorevent::ErrorEvent;
 use crate::dom::event::{Event, EventBubbles, EventCancelable, EventStatus};
 use crate::dom::eventtarget::EventTarget;
 use crate::dom::globalscope::GlobalScope;
 use crate::dom::messageevent::MessageEvent;
 use crate::dom::reportingendpoint::ReportingEndpoint;
+use crate::dom::types::DebuggerGlobalScope;
 #[cfg(feature = "webgpu")]
 use crate::dom::webgpu::identityhub::IdentityHub;
 use crate::dom::worker::{TrustedWorkerAddress, Worker};
@@ -427,6 +429,22 @@ impl DedicatedWorkerGlobalScope {
                     };
                     Runtime::new_with_parent(Some(parent), Some(task_source))
                 };
+                let debugger_global = DebuggerGlobalScope::new(
+                    &runtime,
+                    ThreadInfo::WorkerThread {
+                        worker_id: init.worker_id,
+                        pipeline_id,
+                    },
+                    init.to_devtools_sender.clone(),
+                    init.mem_profiler_chan.clone(),
+                    init.time_profiler_chan.clone(),
+                    init.script_to_constellation_chan.clone(),
+                    init.resource_threads.clone(),
+                    #[cfg(feature = "webgpu")]
+                    gpu_id_hub.clone(),
+                    CanGc::note(),
+                );
+                debugger_global.execute(CanGc::note());
 
                 let context_for_interrupt = runtime.thread_safe_js_context();
                 let _ = context_sender.send(context_for_interrupt);
@@ -471,6 +489,7 @@ impl DedicatedWorkerGlobalScope {
                     control_receiver,
                     insecure_requests_policy,
                 );
+                debugger_global.fire_add_debuggee(CanGc::note(), global.upcast(), pipeline_id);
                 // FIXME(njn): workers currently don't have a unique ID suitable for using in reporter
                 // registration (#6631), so we instead use a random number and cross our fingers.
                 let scope = global.upcast::<WorkerGlobalScope>();

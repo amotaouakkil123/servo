@@ -4,8 +4,7 @@
 
 use base::id::PipelineId;
 use constellation_traits::ScriptToConstellationChan;
-use crossbeam_channel::Sender;
-use devtools_traits::ScriptToDevtoolsControlMsg;
+use devtools_traits::{ScriptToDevtoolsControlMsg, WorkerId};
 use dom_struct::dom_struct;
 use embedder_traits::resources::{self, Resource};
 use ipc_channel::ipc::IpcSender;
@@ -22,7 +21,6 @@ use crate::dom::bindings::codegen::Bindings::DebuggerGlobalScopeBinding;
 use crate::dom::bindings::error::report_pending_exception;
 use crate::dom::bindings::inheritance::Castable;
 use crate::dom::bindings::root::DomRoot;
-use crate::dom::bindings::trace::CustomTraceable;
 use crate::dom::bindings::utils::define_all_exposed_interfaces;
 use crate::dom::event::EventStatus;
 use crate::dom::globalscope::GlobalScope;
@@ -30,10 +28,38 @@ use crate::dom::types::{DebuggerEvent, Event};
 #[cfg(feature = "testbinding")]
 #[cfg(feature = "webgpu")]
 use crate::dom::webgpu::identityhub::IdentityHub;
-use crate::messaging::MainThreadScriptMsg;
 use crate::realms::enter_realm;
 use crate::script_module::ScriptFetchOptions;
 use crate::script_runtime::{CanGc, JSContext};
+
+#[derive(Clone, Debug, MallocSizeOf)]
+pub(crate) enum ThreadInfo {
+    ScriptThread,
+    WorkerThread {
+        worker_id: WorkerId,
+
+        /// Pipeline id of the page that created this worker.
+        ///
+        /// Debugger globals in web worker threads should be created with this pipeline id, because web worker threads
+        /// don’t have a pipeline namespace and the pipeline id only gets used for logging anyway.
+        pipeline_id: PipelineId,
+    },
+}
+
+impl ThreadInfo {
+    fn pipeline_id(&self) -> PipelineId {
+        match self {
+            ThreadInfo::ScriptThread => PipelineId::new(),
+            ThreadInfo::WorkerThread { pipeline_id, .. } => *pipeline_id,
+        }
+    }
+    fn worker_id(&self) -> Option<WorkerId> {
+        match self {
+            ThreadInfo::ScriptThread => None,
+            ThreadInfo::WorkerThread { worker_id, .. } => Some(*worker_id),
+        }
+    }
+}
 
 #[dom_struct]
 /// Global scope for interacting with the devtools Debugger API.
@@ -41,7 +67,8 @@ use crate::script_runtime::{CanGc, JSContext};
 /// <https://firefox-source-docs.mozilla.org/js/Debugger/>
 pub(crate) struct DebuggerGlobalScope {
     global_scope: GlobalScope,
-    script_chan: Sender<MainThreadScriptMsg>,
+    #[no_trace]
+    thread_info: ThreadInfo,
 }
 
 impl DebuggerGlobalScope {
@@ -49,7 +76,7 @@ impl DebuggerGlobalScope {
     #[allow(unsafe_code, clippy::too_many_arguments)]
     pub(crate) fn new(
         runtime: &Runtime,
-        script_chan: Sender<MainThreadScriptMsg>,
+        thread_info: ThreadInfo,
         devtools_chan: Option<IpcSender<ScriptToDevtoolsControlMsg>>,
         mem_profiler_chan: mem::ProfilerChan,
         time_profiler_chan: time::ProfilerChan,
@@ -60,7 +87,7 @@ impl DebuggerGlobalScope {
     ) -> DomRoot<Self> {
         let global = Box::new(Self {
             global_scope: GlobalScope::new_inherited(
-                PipelineId::new(),
+                thread_info.pipeline_id(),
                 devtools_chan,
                 mem_profiler_chan,
                 time_profiler_chan,
@@ -76,7 +103,7 @@ impl DebuggerGlobalScope {
                 None,
                 false,
             ),
-            script_chan,
+            thread_info,
         });
         let global = unsafe {
             DebuggerGlobalScopeBinding::Wrap::<crate::DomTypeHolder>(
@@ -122,10 +149,24 @@ impl DebuggerGlobalScope {
         }
     }
 
-    pub(crate) fn fire_add_debuggee(&self, can_gc: CanGc, global: &GlobalScope) {
+    #[allow(unsafe_code)]
+    pub(crate) fn fire_add_debuggee(
+        &self,
+        can_gc: CanGc,
+        global: &GlobalScope,
+        pipeline_id: PipelineId,
+    ) {
+        let pipeline_id =
+            crate::dom::pipelineid::PipelineId::new(self.upcast(), pipeline_id, can_gc);
+        let event = DomRoot::upcast::<Event>(DebuggerEvent::new(
+            self.upcast(),
+            global,
+            &pipeline_id,
+            self.thread_info.worker_id().map(|id| id.to_string().into()),
+            can_gc,
+        ));
         assert_eq!(
-            DomRoot::upcast::<Event>(DebuggerEvent::new(self.upcast(), global, can_gc))
-                .fire(self.upcast(), can_gc),
+            DomRoot::upcast::<Event>(event).fire(self.upcast(), can_gc),
             EventStatus::NotCanceled,
             "Guaranteed by DebuggerEvent::new"
         );

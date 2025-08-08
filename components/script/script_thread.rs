@@ -125,6 +125,7 @@ use crate::dom::csp::{CspReporting, GlobalCspReporting, Violation};
 use crate::dom::customelementregistry::{
     CallbackReaction, CustomElementDefinition, CustomElementReactionStack,
 };
+use crate::dom::debuggerglobalscope::ThreadInfo;
 use crate::dom::document::{
     Document, DocumentSource, FocusInitiator, HasBrowsingContext, IsHTMLDocument, TouchEventResult,
 };
@@ -949,7 +950,7 @@ impl ScriptThread {
         };
         let debugger_global = DebuggerGlobalScope::new(
             &js_runtime.clone(),
-            senders.self_sender.clone(),
+            ThreadInfo::ScriptThread,
             senders.devtools_server_sender.clone(),
             senders.memory_profiler_sender.clone(),
             senders.time_profiler_sender.clone(),
@@ -3446,7 +3447,7 @@ impl ScriptThread {
             incomplete.theme,
         );
         self.debugger_global
-            .fire_add_debuggee(can_gc, window.upcast());
+            .fire_add_debuggee(can_gc, window.upcast(), incomplete.pipeline_id);
 
         let _realm = enter_realm(&*window);
 
